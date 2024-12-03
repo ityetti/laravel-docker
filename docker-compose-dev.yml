@@ -1,0 +1,13 @@
+version: '2'
+
+services:
+  nginx:
+    volumes:
+      - laravel:/home/laravel:cached
+  php-fpm:
+    volumes:
+      - laravel:/home/laravel:cached
+
+volumes:
+  laravel:
+    external: true

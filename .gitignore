@@ -1,0 +1,8 @@
+.DS_Store
+.idea
+laravel
+.docker-sync
+data
+letsencrypt
+.env
+mysql/db

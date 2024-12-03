@@ -1,0 +1,231 @@
+services:
+  reverse-proxy:
+    container_name: ${PROJECT_NAME}-traefik
+    image: arm64v8/traefik:3.2
+    command:
+      - "--api.insecure=false"
+      - "--api.dashboard=true"
+      - "--providers.docker=true"
+      - "--log.level=DEBUG"
+      - "--providers.docker.exposedByDefault=false"
+      - "--providers.docker.network=laravel"
+      - "--entrypoints.http.address=:80"
+      - "--entrypoints.https.address=:443"
+      - "--entrypoints.http.http.redirections.entrypoint.to=https"
+      - "--entrypoints.http.http.redirections.entrypoint.scheme=https"
+      - "--entrypoints.https.http.tls.certResolver=le"
+      - "--certificatesresolvers.le.acme.tlschallenge=true"
+      - "--certificatesresolvers.le.acme.email=admin@${PROJECT_VIRTUAL_HOST}"
+      - "--certificatesresolvers.le.acme.storage=/letsencrypt/acme.json"
+    labels:
+      - "traefik.enable=true"
+      - "traefik.docker.network=laravel"
+      - "traefik.http.routers.dashboard.rule=Host(`traefik.${PROJECT_VIRTUAL_HOST}`)"
+      - "traefik.http.routers.dashboard.entrypoints=https"
+      - "traefik.http.routers.dashboard.service=api@internal"
+      - "traefik.http.routers.dashboard.middlewares=auth"
+      - "traefik.http.middlewares.auth.basicauth.users=traefik:$$apr1$$gNa7n0/R$$XOc09tOvpfv0FBWZ07upA1"
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      - ./letsencrypt:/letsencrypt
+    networks:
+      - laravel
+
+  nginx:
+    build: ./nginx
+    container_name: ${PROJECT_NAME}-nginx
+    volumes:
+      - ./laravel:/home/laravel:cached
+    networks:
+      - laravel
+    labels:
+      - "traefik.enable=false"
+    expose:
+      - "8080"
+
+  php-fpm:
+    build: ./php-fpm
+    container_name: ${PROJECT_NAME}-php-fpm
+    volumes:
+      - ./laravel:/home/laravel:cached
+      - ./php-fpm/php.ini:/etc/php.ini
+    networks:
+      - laravel
+    labels:
+      - "traefik.enable=true"
+      - "traefik.docker.network=laravel"
+
+  php-fpm-xdebug:
+    build: ./php-fpm-xdebug
+    container_name: ${PROJECT_NAME}-php-fpm-xdebug
+    volumes:
+      - ./laravel:/home/laravel:cached
+      - ./php-fpm/php.ini:/etc/php.ini
+    networks:
+      - laravel
+    labels:
+      - "traefik.enable=true"
+      - "traefik.docker.network=laravel"
+    environment:
+      PHP_IDE_CONFIG: "serverName=Docker"
+      XDEBUG_CONFIG: "client_host=host.docker.internal"
+    profiles:
+      - xdebug
+
+  redis:
+    image: arm64v8/redis:7.4
+    container_name: ${PROJECT_NAME}-redis
+    labels:
+      - "traefik.enable=true"
+      - "traefik.docker.network=laravel"
+    ports:
+      - "6379:6379"
+    networks:
+      - laravel
+
+  mysql:
+    image: arm64v8/mysql:8.4.3
+    container_name: ${PROJECT_NAME}-mysql
+    labels:
+      - "traefik.enable=true"
+      - "traefik.docker.network=laravel"
+    volumes:
+      - ./mysql/mysqld.cnf:/etc/mysql/conf.d/mysqld.cnf
+      - ./mysql/db:/var/lib/mysql
+    environment:
+      MYSQL_DATABASE: 'laravel_db'
+      MYSQL_ROOT_PASSWORD: 'root_pass'
+      MYSQL_USER: 'laravel_user'
+      MYSQL_PASSWORD: 'PASSWD#'
+      MYSQL_ALLOW_EMPTY_PASSWORD: 'false'
+    ports:
+      - "3308:3306"
+    networks:
+      - laravel
+
+  mailpit:
+    image: axllent/mailpit:v1.21
+    container_name: ${PROJECT_NAME}-mailpit
+    labels:
+      - "traefik.enable=true"
+      - "traefik.docker.network=laravel"
+      - "traefik.http.routers.mailpit.rule=Host(`mail.${PROJECT_VIRTUAL_HOST}`)"
+      - "traefik.http.services.mailpit.loadbalancer.server.port=8025"
+    volumes:
+      - ./data:/data
+    ports:
+      - "1025:1025"
+      - "8025:8025"
+    networks:
+      - laravel
+    environment:
+      MP_MAX_MESSAGES: 5000
+      MP_DATABASE: /data/mailpit.db
+      MP_SMTP_AUTH_ACCEPT_ANY: 1
+      MP_SMTP_AUTH_ALLOW_INSECURE: 1
+    expose:
+      - "8025"
+
+  rabbitmq:
+    image: arm64v8/rabbitmq:4.0.4-management
+    container_name: ${PROJECT_NAME}-rabbitmq
+    labels:
+      - "traefik.enable=true"
+      - "traefik.docker.network=laravel"
+      - "traefik.http.routers.rabbitmq.rule=Host(`rabbit.${PROJECT_VIRTUAL_HOST}`)"
+      - "traefik.http.routers.rabbitmq.middlewares=strip-docs"
+      - "traefik.http.middlewares.strip-docs.stripprefix.prefixes=/rmq"
+      - "traefik.http.services.rabbitmq.loadbalancer.server.port=15672"
+    ports:
+      - "15672:15672"
+      - "5672:5672"
+    networks:
+      - laravel
+    expose:
+      - "15672"
+
+  opensearch:
+    image: opensearchproject/opensearch:2.18.0
+    container_name: ${PROJECT_NAME}-opensearch
+    labels:
+      - "traefik.enable=true"
+      - "traefik.docker.network=laravel"
+      - "traefik.http.routers.search.rule=Host(`search.${PROJECT_VIRTUAL_HOST}`)"
+    ports:
+      - "9200:9200"
+      - "9600:9600"
+    networks:
+      - laravel
+    environment:
+      - "discovery.type=single-node"
+      - "bootstrap.memory_lock=true"
+      - "OPENSEARCH_JAVA_OPTS=-Xms2048m -Xmx2048m"
+      - "http.host=0.0.0.0"
+      - "DISABLE_SECURITY_PLUGIN=true"
+    ulimits:
+      memlock:
+        soft: -1
+        hard: -1
+      nofile:
+        soft: 65536
+        hard: 65536
+
+  opensearch-dashboard:
+    image: opensearchproject/opensearch-dashboards:2.18.0
+    container_name: ${PROJECT_NAME}-opensearch-dashboard
+    labels:
+      - "traefik.enable=true"
+      - "traefik.docker.network=laravel"
+      - "traefik.http.services.kibana-svc.loadbalancer.server.port=5601"
+      - "traefik.domain=dashboard.${PROJECT_VIRTUAL_HOST}"
+      - "traefik.http.routers.kibana-rtr.service=kibana-svc"
+      - "traefik.http.routers.kibana-rtr.entrypoints=https"
+      - "traefik.http.routers.kibana-rtr.rule=Host(`dashboard.${PROJECT_VIRTUAL_HOST}`)"
+    networks:
+      - laravel
+    environment:
+      - "OPENSEARCH_HOSTS=http://opensearch:9200"
+      - "DISABLE_SECURITY_DASHBOARDS_PLUGIN=true"
+    ports:
+      - "5601:5601"
+    expose:
+      - "5601"
+    ulimits:
+      memlock:
+        soft: -1
+        hard: -1
+      nofile:
+        soft: 65536
+        hard: 65536
+
+  varnish:
+    build: ./varnish
+    container_name: ${PROJECT_NAME}-varnish
+    labels:
+      - "traefik.enable=true"
+      - "traefik.docker.network=laravel"
+      - "traefik.http.routers.varnish.rule=Host(`${PROJECT_VIRTUAL_HOST}`)"
+      - "traefik.http.routers.varnish.entrypoints=https"
+      - "traefik.http.services.varnish.loadbalancer.server.port=6081"
+    networks:
+      - laravel
+    ports:
+      - "6081:6081"
+    depends_on:
+      - nginx
+    links:
+      - nginx
+    volumes:
+      - ./varnish/varnish.vcl:/etc/varnish/default.vcl
+    environment:
+      - CACHE_SIZE=1G
+    expose:
+      - "6081"
+    command: ["varnishd", "-F", "-a", ":6081", "-b", "nginx:8080"]
+
+networks:
+  laravel:
+    driver: bridge
