@@ -111,6 +111,53 @@ Create and install new project:
 ## Setting up Laravel
 To access the laravel homepage, go to the following url: https://laravel.test<br>
 
+<details>
+
+<summary>Storing sessions and cache in redis.</summary>
+
+##### As reference, you could use files from `laravel_config` folder.
+
+#### Setting up vite.config.js (you need to add the correct server configuration).
+
+```js
+   server: {
+        host: 'nginx',
+        port: 5175,
+        https: true,
+    },
+```
+
+#### Setting up the boot method in /app/Providers/AppServiceProvider.php (it is necessary for the correct use of HTTPS locally).
+
+```php
+public function boot(): void
+    {
+        if (config('app.env') === 'local') {
+            URL::forceScheme('https');
+        }
+    }
+```
+
+#### Don't forget to change the following parameters in the .env file of the Laravel app folder.
+
+```php
+APP_URL=https://laravel.test
+DB_CONNECTION=mysql
+DB_HOST=mysql
+DB_PORT=3306
+DB_DATABASE=laravel_db
+DB_USERNAME=laravel_user
+DB_PASSWORD="PASSWD#"
+REDIS_CLIENT=redis
+REDIS_HOST=redis
+REDIS_PASSWORD=null
+REDIS_PORT=6379
+MAIL_HOST=mailpit
+```
+
+</details>
+
+
 ## How to use xDebug
 You could enable or disable xDebug with the next command: `./scripts/switch_mode [fpm|xdebug]`<br>
 `fpm` - Enable container without xDebug <br>
