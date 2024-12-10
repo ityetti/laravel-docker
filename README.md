@@ -102,7 +102,6 @@ After the build has finished you can press the ctrl+c and docker-compose stop al
 To the run installation process use next commands.<br>
 Create and install new project:
 
-    ./scripts/composer global require laravel/installer
     ./scripts/composer create-project laravel/laravel .
     ./scripts/npm install
     ./scripts/npm run build
